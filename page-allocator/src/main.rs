@@ -17,4 +17,7 @@ fn main() {
 
     println!("{}", allocator.alloc(4));
     allocator.dump();
+
+    println!("{}", allocator.alloc(200));
+    allocator.dump();
 }

@@ -19,13 +19,15 @@ use std::collections::HashMap;
 
 #[derive(Debug)]
 struct PageDescriptor {
+    block_size: u16,  // size of block of the page
     counter: u16,     // amount of all empty block
     first_empty: u16, // pointer to first empty block
 }
 
 impl PageDescriptor {
-    pub const fn new(counter: u16, first_empty: u16) -> Self {
+    pub const fn new(block_size: u16, counter: u16, first_empty: u16) -> Self {
         PageDescriptor {
+            block_size,
             counter,
             first_empty,
         }
@@ -38,6 +40,7 @@ pub struct Allocator {
     descriptors: Vec<PageDescriptor>,
     pages: HashMap<u16, Vec<u16>>, // hashmap with lists with not-full pages
     page_size: usize,
+    page_number: usize,
 }
 
 impl Allocator {
@@ -47,18 +50,19 @@ impl Allocator {
             descriptors: Vec::new(),  // one descriptor for each page
             pages: HashMap::new(),    // hashmap with lists with non-empty pages
             page_size: 256,
+            page_number: 3,
         }
     }
 
     pub fn init(&mut self) {
         // self.memory = vec![0; 1536];  // 6 pages for 256 bytes for each
-        self.memory = vec![0; self.page_size * 3];  // 2 pages for 256 bytes for each
+        self.memory = vec![0; self.page_size * self.page_number];  // 2 pages for 256 bytes for each
     }
 
     pub fn dump(&self) {
         println!("{:?}", self.descriptors);
         println!("{:?}", self.pages);
-        // println!("{:?}", self.memory);
+
         println!("{:?}", &self.memory[0..256]);
         println!("");
         println!("{:?}", &self.memory[256..512]);
@@ -68,9 +72,8 @@ impl Allocator {
     }
 
     pub fn alloc(&mut self, size: u16) -> i16 {
+        let block_size = self.round_up(size);
         if size <= self.page_size as u16 / 2  {
-            // allock one block
-            let block_size = self.round_up(size);
             if !self.pages.contains_key(&block_size) {
                 // take new page and format it with block with `block_size` sizes
                 self.format_new_page(block_size);
@@ -98,7 +101,37 @@ impl Allocator {
             return block_addr as i16;
         } else {
             // allock one page or few pages
-            unimplemented!();
+            let pages_amount = (block_size as f32 / self.page_size as f32).ceil() as usize;
+            let size = pages_amount * self.page_size;
+            if self.pages.contains_key(&(size as u16)) {
+                let mut addr = 0;
+                match self.pages.get_mut(&(size as u16)) {
+                    Some(vec) => {
+                        match vec.first() {
+                            Some(x) => addr = *x,
+                            None => {},
+                        };
+                        if vec.len() == 1 {
+                            self.pages.remove(&(size as u16));
+                        } else {
+                            vec.remove(0);
+                        }
+                    },
+                    None => panic!("Error"),
+                };
+                addr as i16
+            } else {
+                let start_addr = self.descriptors.len() as u16;
+                if pages_amount + start_addr as usize > self.page_number {
+                    panic!("Error: {}", );
+                }
+                let start_addr = start_addr * self.page_size as u16;
+                self.descriptors.push(PageDescriptor::new(size as u16, 0, 0));
+                for _i in 1..pages_amount {
+                    self.descriptors.push(PageDescriptor::new(0, 0, 0));
+                }
+                start_addr as i16
+            }
         }
     }
 
@@ -106,20 +139,21 @@ impl Allocator {
         -1
     }
 
-    pub fn dealloc(&mut self, _addr: usize) {
+    pub fn dealloc(&mut self, addr: usize) -> u16 {
+        self.roung_to_pages(addr as u16)
     }
 
     //
     fn format_new_page(&mut self, block_size: u16) {
         let new_page = self.descriptors.len();
-        if new_page >= 6 {
-            panic!("not enought memory");
+        if new_page >= self.page_number {
+            panic!("Error");
         }
         let new_page_addr = new_page * self.page_size;
         for addr in (0..self.page_size).step_by(block_size as usize) {
             self.memory[addr + new_page_addr] = (addr + new_page_addr + block_size as usize) as u16;
         }
-        self.descriptors.push(PageDescriptor::new(self.page_size as u16 / block_size, new_page_addr as u16));
+        self.descriptors.push(PageDescriptor::new(block_size, self.page_size as u16 / block_size, new_page_addr as u16));
         match self.pages.get_mut(&block_size) {
             Some(x) => {
                 // x - list with pages (mutable reference to this list)
@@ -151,5 +185,9 @@ impl Allocator {
         } else {
             8
         }
+    }
+
+    fn roung_to_pages(&self, block_size: u16) -> u16 {
+        (block_size as f32 / self.page_size as f32).ceil() as u16
     }
 }
