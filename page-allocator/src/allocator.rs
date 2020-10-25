@@ -135,16 +135,25 @@ impl Allocator {
         }
     }
 
-    pub fn realloc(&mut self, _addr: usize, _size: u16) -> i16 {
-        -1
+    pub fn realloc(&mut self, addr: u16, size: u16) -> i16 {
+        let page = addr as usize / self.page_size;
+        let block_size = self.descriptors[page].block_size;
+        let new_block_size = self.round_up(size);
+        if block_size == new_block_size {
+            // nothing to do
+            addr as i16
+        } else {
+            self.dealloc(addr);
+            self.alloc(size)
+        }
     }
 
     pub fn dealloc(&mut self, addr: u16) {
         let page = addr as usize / self.page_size;
-        let page_size = self.descriptors[page].block_size;
+        let block_size = self.descriptors[page].block_size;
         let descriptor = &mut self.descriptors[page];
         descriptor.counter = descriptor.counter + 1;
-        if page_size as usize <= self.page_size / 2 {
+        if block_size as usize <= self.page_size / 2 {
             // dealloc one block from the page
             self.memory[addr as usize] = descriptor.first_empty;
             descriptor.first_empty = addr as u16;
@@ -160,12 +169,12 @@ impl Allocator {
             }
         } else {
             // dealloc a few pages (one big block)
-            match self.pages.get_mut(&page_size) {
+            match self.pages.get_mut(&block_size) {
                 Some(vec) => vec.push(addr),
                 None => {
                     let mut v = Vec::new();
                     v.push(addr);
-                    self.pages.insert(page_size, v);
+                    self.pages.insert(block_size, v);
                 },
             }
         }
