@@ -12,6 +12,12 @@ fn main() {
     println!("{}", allocator.alloc(5));
     allocator.dump();
 
+    println!("{}", allocator.alloc(5));
+    allocator.dump();
+
+    allocator.dealloc(8);
+    allocator.dump();
+
     println!("{}", allocator.alloc(3));
     allocator.dump();
 
@@ -19,5 +25,8 @@ fn main() {
     allocator.dump();
 
     println!("{}", allocator.alloc(200));
+    allocator.dump();
+
+    allocator.dealloc(512);
     allocator.dump();
 }

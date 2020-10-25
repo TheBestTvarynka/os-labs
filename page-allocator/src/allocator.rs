@@ -139,8 +139,36 @@ impl Allocator {
         -1
     }
 
-    pub fn dealloc(&mut self, addr: usize) -> u16 {
-        self.roung_to_pages(addr as u16)
+    pub fn dealloc(&mut self, addr: u16) {
+        let page = addr as usize / self.page_size;
+        let page_size = self.descriptors[page].block_size;
+        let descriptor = &mut self.descriptors[page];
+        descriptor.counter = descriptor.counter + 1;
+        if page_size as usize <= self.page_size / 2 {
+            // dealloc one block from the page
+            self.memory[addr as usize] = descriptor.first_empty;
+            descriptor.first_empty = addr as u16;
+            if descriptor.counter == 1 {
+                match self.pages.get_mut(&descriptor.block_size) {
+                    Some(vec) => vec.push((page * self.page_size) as u16),
+                    None => {
+                        let mut v = Vec::new();
+                        v.push((page * self.page_size) as u16);
+                        self.pages.insert(descriptor.block_size, v);
+                    },
+                }
+            }
+        } else {
+            // dealloc a few pages (one big block)
+            match self.pages.get_mut(&page_size) {
+                Some(vec) => vec.push(addr),
+                None => {
+                    let mut v = Vec::new();
+                    v.push(addr);
+                    self.pages.insert(page_size, v);
+                },
+            }
+        }
     }
 
     //
@@ -171,10 +199,11 @@ impl Allocator {
     fn remove_page_from_list(&mut self, block_size: u16) {
         match self.pages.get_mut(&block_size) {
             Some(x) => {
-                // x - list with pages (mutable reference to this list)
                 x.remove(0);
             },
-            None => {},
+            None => {
+                self.pages.insert(block_size, Vec::new());
+            },
         }
     }
 
@@ -185,9 +214,5 @@ impl Allocator {
         } else {
             8
         }
-    }
-
-    fn roung_to_pages(&self, block_size: u16) -> u16 {
-        (block_size as f32 / self.page_size as f32).ceil() as u16
     }
 }
