@@ -218,10 +218,6 @@ impl Allocator {
 
     // round up passed size to nearest block size
     fn round_up(&self, size: u16) -> u16 {
-        if size <= 4 {
-            4
-        } else {
-            8
-        }
+        ((size as f32 / 4.0).ceil() * 4.0) as u16
     }
 }
