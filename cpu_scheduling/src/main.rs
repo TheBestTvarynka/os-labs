@@ -8,19 +8,23 @@ use std::time::Duration;
 
 #[derive(Copy, Clone)]
 struct Job {
+    id: u32,
     duration: i32
 }
 impl fmt::Debug for Job {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Job(");
+        f.write_str(&self.id.to_string());
+        f.write_str(", ");
         f.write_str(&self.duration.to_string());
         f.write_str(")")
     }
 }
 impl Job {
-    pub const fn new(duration: i32) -> Self {
+    pub const fn new(id: u32, duration: i32) -> Self {
         Job {
-            duration
+            id,
+            duration,
         }
     }
 
@@ -39,7 +43,7 @@ impl Scheduler {
         let (tx, rx) = mpsc::channel();
         (Scheduler {
             queues: HashMap::new(),
-            interval: 3,
+            interval: 4,
             receiver: rx
         }, tx)
     }
@@ -55,18 +59,18 @@ impl Scheduler {
                 self.queues.insert(1, j);
             },
         };
-        print!("New job added: {:?}", job);
+        println!("New job added: {:?}", job);
     }
 
     pub fn print(&self) {
-        print!("---------------\n");
+        println!("---------------");
         let len = self.queues.len();
         for i in 1..(len + 1) {
             if let Some(jobs) = self.queues.get(&(i as u8)) {
-                print!("{} - {:?}\n", i, jobs);
+                println!("{} - {:?}", i, jobs);
             }
         }
-        print!("---------------\n");
+        println!("---------------");
     }
 
     pub fn run(&mut self) {
@@ -81,7 +85,8 @@ impl Scheduler {
                         continue;
                     }
                     for job in jobs.iter_mut() {
-                        thread::sleep(Duration::from_secs(i as u64));
+                        // thread::sleep(Duration::from_secs(i as u64));
+                        thread::sleep(Duration::from_secs(2));
                         job.work((i * 8) as i32);
                         if job.duration > 0 {
                             next_level_jobs.push(*job);
@@ -99,11 +104,13 @@ impl Scheduler {
                 };
                 break;
             }
-            match self.receiver.try_recv() {
-                Ok(job) => {
-                    self.add_job(job);
-                },
-                Err(_) => {},
+            loop {
+                match self.receiver.try_recv() {
+                    Ok(job) => {
+                        self.add_job(job);
+                    },
+                    Err(_) => break,
+                };
             }
             count += 1;
         }
@@ -115,14 +122,15 @@ fn main() {
 
     let interval = scheduler.interval;
     thread::spawn(move || {
+        let mut jobId = 0;
         let mut rng = rand::thread_rng();
         loop {
-            sender.send(Job::new(rng.gen_range(1, 20))).unwrap();
+            sender.send(Job::new(jobId, rng.gen_range(1, 20))).unwrap();
             thread::sleep(Duration::from_secs(interval as u64));
+            jobId += 1;
         }
     });
 
-    scheduler.print();
-    print!("Start:");
+    println!("Start:");
     scheduler.run();
 }
