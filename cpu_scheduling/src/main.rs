@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 use rand::Rng;
+// use chrono::{Utc, DateTime};
+use std::time::{Duration, Instant};
 use std::fmt;
 use std::thread;
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
-use std::time::Duration;
 
 #[derive(Copy, Clone)]
 struct Job {
     id: u32,
-    duration: i32
+    duration: i32,
+    start_time: Instant
 }
 impl fmt::Debug for Job {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -21,35 +23,37 @@ impl fmt::Debug for Job {
     }
 }
 impl Job {
-    pub const fn new(id: u32, duration: i32) -> Self {
+    pub fn new(id: u32, duration: i32) -> Self {
         Job {
             id,
             duration,
+            start_time: Instant::now()
         }
     }
 
     pub fn work(&mut self, time: i32) {
-        println!("Job {} working...", self.id);
+        // println!("Job {} working...", self.id);
         self.duration -= time;
     }
 }
 
 struct Scheduler {
     queues: HashMap<u8, Vec<Job>>,
-    interval: u32,
-    receiver: Receiver<Job>
+    receiver: Receiver<Job>,
+    waitings: Vec<Duration>,
 }
 impl Scheduler {
     pub fn new() -> (Self, Sender<Job>) {
         let (tx, rx) = mpsc::channel();
         (Scheduler {
             queues: HashMap::new(),
-            interval: 7,
-            receiver: rx
+            receiver: rx,
+            waitings: Vec::new()
         }, tx)
     }
 
-    pub fn add_job(&mut self, job: Job) {
+    pub fn add_job(&mut self, mut job: Job) {
+        job.start_time = Instant::now();
         match self.queues.get_mut(&1) {
             Some(x) => {
                 x.push(job);
@@ -75,13 +79,17 @@ impl Scheduler {
     }
 
     pub fn run(&mut self) {
+        let mut it = 0;
         loop {
-            self.print();
+            // println!("{}", it);
+            if it == 100 {
+                break;
+            }
             let len = self.queues.len();
             for i in 1..(len + 1) {
                 let mut jobs = match self.queues.get_mut(&(i as u8)) {
                     Some(jobs) => {
-                        let mut clone = jobs.clone();
+                        let clone = jobs.clone();
                         jobs.clear();
                         clone
                     },
@@ -97,9 +105,11 @@ impl Scheduler {
                     match iter.next() {
                         Some(job) => {
                             job.work(i as i32 * 8);
-                            thread::sleep(Duration::from_secs(4));
+                            thread::sleep(Duration::from_millis(i as u64 * 8));
                             if job.duration > 0 {
                                 next_level_jobs.push(*job);
+                            } else {
+                                self.waitings.push(job.start_time.elapsed());
                             }
                             if self.receive_jobs() {
                                 level_jobs.extend_from_slice(iter.into_slice());
@@ -117,7 +127,7 @@ impl Scheduler {
             }
             self.receive_jobs();
             if self.if_empty() {
-                println!("waiting for jobs...");
+                // println!("waiting for jobs...");
                 match self.receiver.recv() {
                     Ok(job) => {
                         self.add_job(job);
@@ -125,6 +135,7 @@ impl Scheduler {
                     Err(_) => {},
                 };
             }
+            it += 1;
         }
     }
 
@@ -154,7 +165,6 @@ impl Scheduler {
     fn receive_jobs(&mut self) -> bool {
         let mut res = false;
         loop {
-            // println!("try new job");
             match self.receiver.try_recv() {
                 Ok(job) => {
                     res = true;
@@ -170,17 +180,18 @@ impl Scheduler {
 fn main() {
     let (mut scheduler, sender) = Scheduler::new();
 
-    let interval = scheduler.interval;
     thread::spawn(move || {
         let mut job_id = 0;
         let mut rng = rand::thread_rng();
-        loop {
-            sender.send(Job::new(job_id, rng.gen_range(1, 20))).unwrap();
-            thread::sleep(Duration::from_secs(interval as u64));
+        for _ in 0..10 {
+            sender.send(Job::new(job_id, rng.gen_range(1, 32))).unwrap();
+            thread::sleep(Duration::from_millis(12));
             job_id += 1;
         }
     });
 
-    println!("Start:");
     scheduler.run();
+    println!("{:?}", scheduler.waitings);
+    println!("{}", scheduler.waitings.len());
+    println!("{}", scheduler.waitings.iter().fold(0, |acc, x| acc + x.as_millis()) as f64  / scheduler.waitings.len() as f64);
 }
