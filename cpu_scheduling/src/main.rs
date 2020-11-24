@@ -1,11 +1,11 @@
 use std::collections::HashMap;
-use rand::Rng;
-// use chrono::{Utc, DateTime};
 use std::time::{Duration, Instant};
 use std::fmt;
 use std::thread;
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
+use std::cmp::min;
+use rand::Rng;
 
 #[derive(Copy, Clone)]
 struct Job {
@@ -64,7 +64,7 @@ impl Scheduler {
                 self.queues.insert(1, j);
             },
         };
-        println!("New job added: {:?}", job);
+        // println!("New job added: {:?}", job);
     }
 
     pub fn print(&self) {
@@ -81,7 +81,6 @@ impl Scheduler {
     pub fn run(&mut self) {
         let mut it = 0;
         loop {
-            // println!("{}", it);
             if it == 100 {
                 break;
             }
@@ -104,8 +103,9 @@ impl Scheduler {
                 loop {
                     match iter.next() {
                         Some(job) => {
-                            job.work(i as i32 * 8);
-                            thread::sleep(Duration::from_millis(i as u64 * 8));
+                            let work_time = min(job.duration as u64, i as u64 * 8);
+                            job.work(work_time as i32);
+                            thread::sleep(Duration::from_millis(work_time));
                             if job.duration > 0 {
                                 next_level_jobs.push(*job);
                             } else {
@@ -185,7 +185,7 @@ fn main() {
         let mut rng = rand::thread_rng();
         for _ in 0..10 {
             sender.send(Job::new(job_id, rng.gen_range(1, 32))).unwrap();
-            thread::sleep(Duration::from_millis(12));
+            thread::sleep(Duration::from_millis(32));
             job_id += 1;
         }
     });
