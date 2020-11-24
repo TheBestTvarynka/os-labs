@@ -96,7 +96,8 @@ impl Scheduler {
                 loop {
                     match iter.next() {
                         Some(job) => {
-                            job.work(i as i32 * 8);
+                            let work_time = min(job.duration, i as i32 * 8);
+                            job.work(work_time);
                             thread::sleep(Duration::from_secs(4));
                             if job.duration > 0 {
                                 next_level_jobs.push(*job);
