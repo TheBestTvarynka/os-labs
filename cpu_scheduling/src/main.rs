@@ -44,7 +44,7 @@ impl Scheduler {
         let (tx, rx) = mpsc::channel();
         (Scheduler {
             queues: HashMap::new(),
-            interval: 7,
+            interval: 5,
             receiver: rx
         }, tx)
     }
