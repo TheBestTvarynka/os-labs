@@ -29,6 +29,7 @@ impl Job {
     }
 
     pub fn work(&mut self, time: i32) {
+        println!("Job {} working...", self.id);
         self.duration -= time;
     }
 }
@@ -43,7 +44,7 @@ impl Scheduler {
         let (tx, rx) = mpsc::channel();
         (Scheduler {
             queues: HashMap::new(),
-            interval: 4,
+            interval: 7,
             receiver: rx
         }, tx)
     }
@@ -74,46 +75,95 @@ impl Scheduler {
     }
 
     pub fn run(&mut self) {
-        let mut count = 0;
-        while count < 100 {
+        loop {
             self.print();
             let len = self.queues.len();
             for i in 1..(len + 1) {
-                let mut next_level_jobs = Vec::new();
-                if let Some(jobs) = self.queues.get_mut(&(i as u8)) {
-                    if jobs.len() == 0 {
-                        continue;
-                    }
-                    for job in jobs.iter_mut() {
-                        // thread::sleep(Duration::from_secs(i as u64));
-                        thread::sleep(Duration::from_secs(2));
-                        job.work((i * 8) as i32);
-                        if job.duration > 0 {
-                            next_level_jobs.push(*job);
-                        }
-                    }
-                    jobs.clear();
-                }
-                match self.queues.get_mut(&(i as u8 + 1)) {
+                let mut jobs = match self.queues.get_mut(&(i as u8)) {
                     Some(jobs) => {
-                        jobs.extend(&next_level_jobs);
+                        let mut clone = jobs.clone();
+                        jobs.clear();
+                        clone
                     },
-                    None => {
-                        self.queues.insert(i as u8 + 1, next_level_jobs);
-                    },
+                    None => Vec::new(),
                 };
+                if jobs.len() <= 0 {
+                    continue;
+                }
+                let mut level_jobs: Vec<Job> = Vec::new();
+                let mut next_level_jobs = Vec::new();
+                let mut iter = jobs.iter_mut();
+                loop {
+                    match iter.next() {
+                        Some(job) => {
+                            job.work(i as i32 * 8);
+                            thread::sleep(Duration::from_secs(4));
+                            if job.duration > 0 {
+                                next_level_jobs.push(*job);
+                            }
+                            if self.receive_jobs() {
+                                level_jobs.extend_from_slice(iter.into_slice());
+                                break;
+                            }
+                        },
+                        None => break,
+                    }
+                }
+                if let Some(jobs) = self.queues.get_mut(&(i as u8)) {
+                    jobs.extend(level_jobs);
+                }
+                self.add_next_level_jobs(i as u8, next_level_jobs);
                 break;
             }
-            loop {
-                match self.receiver.try_recv() {
+            self.receive_jobs();
+            if self.if_empty() {
+                println!("waiting for jobs...");
+                match self.receiver.recv() {
                     Ok(job) => {
                         self.add_job(job);
                     },
-                    Err(_) => break,
+                    Err(_) => {},
                 };
             }
-            count += 1;
         }
+    }
+
+    fn if_empty(&self) -> bool {
+        for queue in self.queues.values() {
+            if queue.len() > 0 {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    fn add_next_level_jobs(&mut self, prior: u8, jobs: Vec<Job>) {
+        if jobs.len() == 0 {
+            return;
+        }
+        match self.queues.get_mut(&(prior + 1)) {
+            Some(current_jobs) => {
+                current_jobs.extend(&jobs);
+            },
+            None => {
+                self.queues.insert(prior + 1, jobs);
+            },
+        };
+    }
+
+    fn receive_jobs(&mut self) -> bool {
+        let mut res = false;
+        loop {
+            // println!("try new job");
+            match self.receiver.try_recv() {
+                Ok(job) => {
+                    res = true;
+                    self.add_job(job);
+                },
+                Err(_) => break,
+            };
+        }
+        res
     }
 }
 
@@ -122,12 +172,12 @@ fn main() {
 
     let interval = scheduler.interval;
     thread::spawn(move || {
-        let mut jobId = 0;
+        let mut job_id = 0;
         let mut rng = rand::thread_rng();
         loop {
-            sender.send(Job::new(jobId, rng.gen_range(1, 20))).unwrap();
+            sender.send(Job::new(job_id, rng.gen_range(1, 20))).unwrap();
             thread::sleep(Duration::from_secs(interval as u64));
-            jobId += 1;
+            job_id += 1;
         }
     });
 
